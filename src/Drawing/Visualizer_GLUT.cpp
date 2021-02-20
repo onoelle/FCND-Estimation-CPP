@@ -418,8 +418,8 @@ void Visualizer_GLUT::Paint()
 	glHint (GL_LINE_SMOOTH_HINT, GL_NICEST);	
 	glEnable (GL_LINE_SMOOTH);
   
-  int width = glutGet(GLUT_WINDOW_WIDTH);
-  int height = glutGet(GLUT_WINDOW_HEIGHT);
+  int width = 2 * glutGet(GLUT_WINDOW_WIDTH);
+  int height = 2 * glutGet(GLUT_WINDOW_HEIGHT);
     
 	glViewport(0,0, width, height);
 

@@ -93,14 +93,21 @@ void QuadEstimatorEKF::UpdateFromIMU(V3F accel, V3F gyro)
   // (replace the code below)
   // make sure you comment it out when you add your own code -- otherwise e.g. you might integrate yaw twice
 
-  float predictedPitch = pitchEst + dtIMU * gyro.y;
-  float predictedRoll = rollEst + dtIMU * gyro.x;
-  ekfState(6) = ekfState(6) + dtIMU * gyro.z;	// yaw
+  // float predictedPitch = pitchEst + dtIMU * gyro.y;
+  // float predictedRoll = rollEst + dtIMU * gyro.x;
+  // ekfState(6) = ekfState(6) + dtIMU * gyro.z;	// yaw
+    
+    Quaternion<float> attitude = Quaternion<float>::FromEuler123_RPY(rollEst, pitchEst, ekfState(6));
+    attitude.IntegrateBodyRate(gyro, dtIMU);
 
-  // normalize yaw to -pi .. pi
-  if (ekfState(6) > F_PI) ekfState(6) -= 2.f*F_PI;
-  if (ekfState(6) < -F_PI) ekfState(6) += 2.f*F_PI;
+    float predictedPitch = attitude.Pitch();
+    float predictedRoll = attitude.Roll();
+    ekfState(6) = attitude.Yaw();
 
+    // normalize yaw to -pi .. pi
+    if (ekfState(6) > F_PI) ekfState(6) -= 2.f*F_PI;
+    if (ekfState(6) < -F_PI) ekfState(6) += 2.f*F_PI;
+    
   /////////////////////////////// END STUDENT CODE ////////////////////////////
 
   // CALCULATE UPDATE
@@ -161,8 +168,19 @@ VectorXf QuadEstimatorEKF::PredictState(VectorXf curState, float dt, V3F accel, 
   Quaternion<float> attitude = Quaternion<float>::FromEuler123_RPY(rollEst, pitchEst, curState(6));
 
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
+    predictedState(0) = predictedState(0) + curState(3) * dt;
+    predictedState(1) = predictedState(1) + curState(4) * dt;
+    predictedState(2) = predictedState(2) + curState(5) * dt;
 
+    // calculate global acceleration in order to predict velocities
+    V3F accel_global = attitude.Rotate_BtoI(accel);
 
+    predictedState(3) = predictedState(3) + accel_global.x * dt;
+    predictedState(4) = predictedState(4) + accel_global.y * dt;
+    predictedState(5) = predictedState(5) - accel_global.z * dt - CONST_GRAVITY * dt; // change in velocity: we have to remove the gravity component
+
+    // yaw integral already done in the IMU update => no update to yaw here
+    
   /////////////////////////////// END STUDENT CODE ////////////////////////////
 
   return predictedState;
@@ -188,8 +206,15 @@ MatrixXf QuadEstimatorEKF::GetRbgPrime(float roll, float pitch, float yaw)
   //   that your calculations are reasonable
 
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
+    // implements equation (52) from the estimation paper (theta = pitch, phi = roll, psi = yaw)
+    RbgPrime(0, 0) = -cos(pitch) * sin(yaw);
+    RbgPrime(0, 1) = -sin(roll) * sin(pitch) * sin(yaw) - cos(roll) * cos(yaw);
+    RbgPrime(0, 2) = -cos(roll) * sin(pitch) * sin(yaw) + sin(roll) * cos(yaw);
 
-
+    RbgPrime(1, 0) = cos(pitch) * cos(yaw);
+    RbgPrime(1, 1) = sin(roll) * sin(pitch) * cos(yaw) - cos(roll) * sin(yaw);
+    RbgPrime(1, 2) = cos(roll) * sin(pitch) * cos(yaw) + sin(roll) * sin(yaw);
+    
   /////////////////////////////// END STUDENT CODE ////////////////////////////
 
   return RbgPrime;
@@ -234,7 +259,19 @@ void QuadEstimatorEKF::Predict(float dt, V3F accel, V3F gyro)
   gPrime.setIdentity();
 
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
+    // equation (51): calculate the derivative of transition function: G_t = g'(u_t, x_t, \Delta t)
+    gPrime(0,3) = dt;
+    gPrime(1,4) = dt;
+    gPrime(2,5) = dt;
 
+    gPrime(3, 6) = (RbgPrime(0) * accel).sum() * dt;
+    gPrime(4, 6) = (RbgPrime(1) * accel).sum() * dt;
+    gPrime(5, 6) = (RbgPrime(2) * accel).sum() * dt;
+
+    // calculate the covariance: \bar{\Sigma}_t = G_t\Sigma_{t-1}G_t^T + Q_t
+    MatrixXf term_1 = gPrime * ekfCov;
+    gPrime.transposeInPlace();
+    ekfCov = term_1 * gPrime + Q;
 
   /////////////////////////////// END STUDENT CODE ////////////////////////////
 
@@ -281,7 +318,18 @@ void QuadEstimatorEKF::UpdateFromMag(float magYaw)
   //  - The magnetomer measurement covariance is available in member variable R_Mag
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
 
+    // section 7.3.2 estimation paper, equations 56 - 58
+    // equation (58)
+    hPrime(0, 6) = 1.;
 
+    zFromX(0) = ekfState(6);
+    float diffYaw = magYaw - ekfState(6);
+    if ( diffYaw > F_PI ) {
+        zFromX(0) += 2.f * F_PI;
+    } else if ( diffYaw < -F_PI ) {
+        zFromX(0) -= 2.f * F_PI;
+    }
+    
   /////////////////////////////// END STUDENT CODE ////////////////////////////
 
   Update(z, hPrime, R_Mag, zFromX);
