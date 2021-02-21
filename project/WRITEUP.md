@@ -252,3 +252,12 @@ Now that the estimator is completely in place, I tried to further tune the param
 Increasing GPSPosZStd from 3 to 4 and GPSVelZStd from 0.3 to 0.4 resulted in a slight further improvement in position error:
 
 ![Scenario 11-6](./scenario11-6_parameterTuning.png)
+
+# Step 6 - Insert your controller
+
+Inserting both the controller code and the parameter file first results in erratic flight - as expected:
+TODO
+
+Tuning the parameters yields a not perfect, but sufficiently close flight along the target trajectory:
+
+![Scenario 11-7](./scenario11-7_OwnController.png)
