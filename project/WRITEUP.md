@@ -60,19 +60,18 @@ The task is to implement the prediction step of the Kalman filter.
 To accomplish this, the transition function in PredictState() calculates the pose and velocities using a simple integration, based on the assumption that dt is small:
 ```
 ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
-  predictedState(0) = predictedState(0) + curState(3) * dt;
-  predictedState(1) = predictedState(1) + curState(4) * dt;
-  predictedState(2) = predictedState(2) + curState(5) * dt;
+  predictedState(0) = curState(0) + curState(3) * dt; // x = x + x_dot * dt
+  predictedState(1) = curState(1) + curState(4) * dt; // y = y + y_dot * dt
+  predictedState(2) = curState(2) + curState(5) * dt; // z = z + z_dot * dt
+  
+  // convert true acceleration from body frame to global/inertial frame
+  V3F acc_inertial = attitude.Rotate_BtoI(accel);
 
-  // calculate global acceleration in order to predict velocities
-  V3F accel_global = attitude.Rotate_BtoI(accel);
-  accel_global.z -= static_cast<float>(CONST_GRAVITY);
+  predictedState(3) = curState(3) + acc_inertial.x * dt; // change in velocity along x = a_x * dt
+  predictedState(4) = curState(4) + acc_inertial.y * dt; // change in velocity along y = a_y * dt
+  predictedState(5) = curState(5) + acc_inertial.z * dt - CONST_GRAVITY * dt; // change in velocity along z = a_z * dt - gravity_component
 
-  predictedState(3) = predictedState(3) + accel_global.x * dt;
-  predictedState(4) = predictedState(4) + accel_global.y * dt;
-  predictedState(5) = predictedState(5) - accel_global.z * dt;
-
-  // yaw integral already done in the IMU update => no update to yaw here
+/////////////////////////////// END STUDENT CODE ////////////////////////////
 ```
 
 With this state prediction, the estimator keeps track of the current state with only a reasonable drift:
@@ -117,10 +116,10 @@ With that function implemented, I implemented the Predict() function following e
 
 Tuning the parameters to these values:
 ````
-QPosXYStd = .0005
+QPosXYStd = .05
 QVelXYStd = .3
 ````
-results in a much better approximation of the errors regarding x and velocity of x, judging from these sample plots: 
+results in a reasonable approximation of the errors regarding x and velocity of x, judging from these sample plots (I prolonged simulation time to 4 seconds to illustrate it better): 
 ![Scenario 9](./scenario9_covariance.png)
 
 # Step 4: Magnetometer Update
@@ -129,28 +128,16 @@ In my simulation setting QYawStd to 0.01 resulted in this behavior, where the st
 
 ![Scenario 10](./scenario10_qyawstd_tuning.png)
 
-However, I could not reproduce the drift of the yaw error over time as described in the project readme.
-I'm suspecting a tuning issue, so after implementing the UpdateFromMag() method, I performed a lot of retuning of my so-far used parameters to pass this scenario successfully:
-
-![Scenario 10](./scenario10_updateMag.png)
-
-The resulting tuning parameters were:
+However, with my current tuning parameters configuration I could not reproduce the drift of the yaw error over time as described in the project readme:
 ```
-QPosXYStd = .001
+QPosXYStd = .05
 QPosZStd = .05
 QVelXYStd = .3
 QVelZStd = .1
-QYawStd = .09
-
-# GPS measurement std deviations
-GPSPosXYStd = 1
-# was: 3
-GPSPosZStd = 300
-GPSVelXYStd = .1
-GPSVelZStd = .3
+QYawStd = .01
 ```
 
-The implementation of the UpdateFromMag() method is
+The implementation of the UpdateFromMag() method follows section 7.3.2 of the estimation paper:
 ```
 ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
 
@@ -169,5 +156,99 @@ The implementation of the UpdateFromMag() method is
 /////////////////////////////// END STUDENT CODE ////////////////////////////
 
 ```
+For successfully completing the scenario, I had to tune th QYawStd parameter again to .09, so the resulting tuning parameters were:
+```
+QPosXYStd = .05
+QPosZStd = .05
+QVelXYStd = .3
+QVelZStd = .1
+QYawStd = .09
+
+# GPS measurement std deviations
+GPSPosXYStd = 1
+# was: 3
+GPSPosZStd = 300
+GPSVelXYStd = .1
+GPSVelZStd = .3
+```
+This configuration yielded a successful completion of scenario 10:
+![Scenario 10](./scenario10_updateMag.png)
+
 
 # Step 5: Closed Loop + GPS Update
+
+## 5.1 - ideal estimator and ideal IMU
+
+Running scenario 11 with both ideal estimator and ideal IMU results in this plot: 
+![Scenario 11-1](./scenario11-1_ideal.png)
+As described, the position error of the z coordinate slowly drifts away.
+
+## 5.2 - using my own estimator (ideal IMU)
+Switching it to using my own estimator but without an implemented GPS update step yields this result:
+![Scenario 11-2](./scenario11-2_estimator_no_gps_update.png)
+Without the GPS update, the control feedback for the height is missing and the drift in the estimator takes effect and is visible as a continuous drift in the z coordinate of the trajectory.
+
+## 5.3 - own estimator, realistic IMU
+Switching to using a realistic (i.e. noisy) IMU, but still not considering GPS measurements in the update step, yields this result:
+![Scenario 11-3](./scenario11-3_realistic_IMU.png)
+The trajectory is obviously very far off from the targeted one.
+
+## 5.4 - tuning process noise model
+Starting from this parameter configuration:
+```
+QPosXYStd = .05
+QPosZStd = .05
+QVelXYStd = .3
+QVelZStd = .1
+QYawStd = .09
+
+# GPS measurement std deviations
+GPSPosXYStd = 1
+GPSPosZStd = 3
+GPSVelXYStd = .3
+GPSVelZStd = .3
+
+# Magnetometer
+MagYawStd = .1
+```
+
+Increasing QPosZStd to .25 and QVelZStd to .5 results in a better, but still not very good fitting error estimation, as can be seen in this plot:
+
+![Scenario 11-4](./scenario11-4_tuned_noise_model.png)
+
+
+## 5.5. - implementing GPS Update step
+
+Implementing the GPS update step follows section 7.3.1:
+
+```
+////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
+  // following section 7.3.1 from estimation paper
+  hPrime(0,0) = 1.;
+  hPrime(1,1) = 1.;
+  hPrime(2,2) = 1.;
+  hPrime(3,3) = 1.;
+  hPrime(4,4) = 1.;
+  hPrime(5,5) = 1.;
+
+  // assign EKF state to zFromX without the yaw
+  for(auto i = 0; i < 6; i++) {
+      zFromX(i) = ekfState(i);
+  }
+
+  Update(z, hPrime, R_GPS, zFromX);
+  
+/////////////////////////////// END STUDENT CODE ////////////////////////////
+
+```
+
+With this update step in place, the resulting trajectory looks like this:
+
+
+![Scenario 11-5](./scenario11-5_implemented_GPS_Update.png)
+
+## Scenario 11.6 - further tuning
+Now that the estimator is completely in place, I tried to further tune the parameters.
+Increasing GPSPosZStd from 3 to 4 and GPSVelZStd from 0.3 to 0.4 resulted in a slight further improvement in position error:
+
+![Scenario 11-6](./scenario11-6_parameterTuning.png)
