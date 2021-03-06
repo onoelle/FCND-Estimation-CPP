@@ -303,12 +303,10 @@ void QuadEstimatorEKF::UpdateFromGPS(V3F pos, V3F vel)
     hPrime(4,4) = 1.;
     hPrime(5,5) = 1.;
 
-    // assign EKF state to zFromX without the yaw
+    // assign EKF state to zFromX (without yaw)
     for(auto i = 0; i < 6; i++) {
         zFromX(i) = ekfState(i);
     }
-
-    Update(z, hPrime, R_GPS, zFromX);
     
   /////////////////////////////// END STUDENT CODE ////////////////////////////
 

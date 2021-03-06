@@ -223,6 +223,7 @@ Implementing the GPS update step follows section 7.3.1:
 
 ```
 ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
+  
   // following section 7.3.1 from estimation paper
   hPrime(0,0) = 1.;
   hPrime(1,1) = 1.;
@@ -231,15 +232,12 @@ Implementing the GPS update step follows section 7.3.1:
   hPrime(4,4) = 1.;
   hPrime(5,5) = 1.;
 
-  // assign EKF state to zFromX without the yaw
+  // assign EKF state to zFromX (without yaw)
   for(auto i = 0; i < 6; i++) {
       zFromX(i) = ekfState(i);
   }
-
-  Update(z, hPrime, R_GPS, zFromX);
   
 /////////////////////////////// END STUDENT CODE ////////////////////////////
-
 ```
 
 With this update step in place, the resulting trajectory looks like this:
@@ -255,9 +253,110 @@ Increasing GPSPosZStd from 3 to 4 and GPSVelZStd from 0.3 to 0.4 resulted in a s
 
 # Step 6 - Insert your controller
 
-Inserting both the controller code and the parameter file first results in erratic flight - as expected:
-TODO
+Inserting both the controller code and parameter file from the previous project first resulted in an erratic flight - as was already expected.
 
-Tuning the parameters yields a not perfect, but sufficiently close flight along the target trajectory:
+Performing a first tuning round for the parameters I could achieve a sufficiently close (according to scenario criteria of staying within 1m of TODO) flight along the target trajectory, but with a poor performance at the second corner of the square.
+
+These were the roughly re-tuned parameters of my controller:
+
+```
+# Position control gains
+kpPosXY = 22
+kpPosZ = 16
+KiPosZ = 25
+
+# Velocity control gains
+kpVelXY = 10
+kpVelZ = 9
+
+# Angle control gains
+kpBank = 15
+kpYaw = 2
+
+# Angle rate gains
+kpPQR = 70, 70, 6
+```
+resulting in the trajectory:
 
 ![Scenario 11-7](./scenario11-7_OwnController.png)
+
+As I was not satisfied with this performance, I followed the advice to further tune my setup in a two-step process.
+Setting the IMU noise model values to 0 again I reverted to a perfect IMU sensor, still yielding more or less the same performance (indicating that the poor performance may be primarily related to the controller (as opposed to estimator):
+
+![Scenario 11 perfect IMU](./scenario11_perfect_IMU.png)
+
+With a perfect IMU sensor, I fine-tuned the parameters to
+```
+# Position control gains
+kpPosXY = 22
+kpPosZ = 16
+KiPosZ = 14
+
+# Velocity control gains
+kpVelXY = 10
+kpVelZ = 8
+
+# Angle control gains
+kpBank = 15
+kpYaw = 2
+
+# Angle rate gains
+kpPQR = 70, 70, 8
+```
+
+Yielding this performance (still with perfect IMU):)
+
+![Scenario 11 tuned controller](./scenario11-tuned-controller.png)
+
+Now activating the realistic IMU again and performing some more tuning of the estimator parameters I finally arrive at this performance:
+
+![Scenario 11 fine-tuned final](./scenario11_fine_tuned_final.png)
+
+This is some improvement over the first tuning result, but it still exhibits a significant error in the z coordinate around the second corner. I did not succeed in finding the root cause of this, whether it's a limit in my implementation or a tuning issue, but would appreciate feedback on possible causes.
+
+The following final parameter sets are:
+
+```
+QuadControlParams.txt
+# Position control gains
+kpPosXY = 22
+kpPosZ = 16
+KiPosZ = 14
+# 14
+
+# Velocity control gains
+kpVelXY = 10
+kpVelZ = 8
+
+# Angle control gains
+kpBank = 15
+kpYaw = 2
+
+# Angle rate gains
+# kpPQR = 92, 92, 8
+kpPQR = 70, 70, 8
+
+
+QuadEstimatorEKF.txt:
+# Process noise model
+# note that the process covariance matrix is diag(pow(QStd,2))*dtIMU
+QPosXYStd = .05
+QPosZStd = .05
+QVelXYStd = .3
+QVelZStd = .1
+QYawStd = .09
+
+# GPS measurement std deviations
+GPSPosXYStd = 1
+GPSPosZStd = 2
+GPSVelXYStd = .3
+GPSVelZStd = .4
+
+# Magnetometer
+MagYawStd = .1
+
+dtIMU = 0.002
+attitudeTau = 100
+```
+
+
