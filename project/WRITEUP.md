@@ -1,7 +1,5 @@
 #  Writeup for the FCND-Estimation-CPP project
 
-fixed output window size, using the advice from https://knowledge.udacity.com/questions/292314
-
 # Step 1: Sensor Noise (Scenario 6)
 
 The task is to process the logged files from the simulation to calculate the standard deviation of the GPS X signal and the IMU Accelerometer X signal.
@@ -52,11 +50,11 @@ With this improved attitude estimation, the attitude error is within 0.1 rad for
 
 ![Scenario 7](./scenario7_att_est.png)
 
-# Step 3: Prediction Step (Scenarios 8-?)
+# Step 3: Prediction Step (Scenarios 8+9)
 
 The task is to implement the prediction step of the Kalman filter.
 
-## Subtask: transition function, state prediction (Scenario 8)
+## Step 3.1: transition function, state prediction (Scenario 8)
 To accomplish this, the transition function in PredictState() calculates the pose and velocities using a simple integration, based on the assumption that dt is small:
 ```
 ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
@@ -78,7 +76,7 @@ With this state prediction, the estimator keeps track of the current state with 
 
 ![Scenario 8](./scenario8_predict.png)
 
-## Subtask: Covariance prediction (Scenario 9)
+## Step 3.2: Covariance prediction (Scenario 9)
 To calculate the partial derivative of the body-to-global rotation matrix in the function GetRbgPrime(), I implemented equation (52) from the estimation paper:
 ```
 ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
@@ -122,8 +120,8 @@ QVelXYStd = .3
 results in a reasonable approximation of the errors regarding x and velocity of x, judging from these sample plots (I prolonged simulation time to 4 seconds to illustrate it better): 
 ![Scenario 9](./scenario9_covariance.png)
 
-# Step 4: Magnetometer Update
-## Tune the parameter QYawStd
+# Step 4: Magnetometer Update (Scenario 10)
+## Step 4.1: Tune the parameter QYawStd
 In my simulation setting QYawStd to 0.01 resulted in this behavior, where the std deviation captures 81% of the values.
 
 ![Scenario 10](./scenario10_qyawstd_tuning.png)
@@ -136,6 +134,7 @@ QVelXYStd = .3
 QVelZStd = .1
 QYawStd = .01
 ```
+## Step 4.2: Implementation of Magnetometer Update
 
 The implementation of the UpdateFromMag() method follows section 7.3.2 of the estimation paper:
 ```
@@ -175,25 +174,25 @@ This configuration yielded a successful completion of scenario 10:
 ![Scenario 10](./scenario10_updateMag.png)
 
 
-# Step 5: Closed Loop + GPS Update
+# Step 5: Closed Loop + GPS Update (Scenario 11)
 
-## 5.1 - ideal estimator and ideal IMU
+## Step 5.1: Ideal estimator and ideal IMU
 
 Running scenario 11 with both ideal estimator and ideal IMU results in this plot: 
 ![Scenario 11-1](./scenario11-1_ideal.png)
 As described, the position error of the z coordinate slowly drifts away.
 
-## 5.2 - using my own estimator (ideal IMU)
+## Step 5.2: Using my own estimator (but still ideal IMU)
 Switching it to using my own estimator but without an implemented GPS update step yields this result:
 ![Scenario 11-2](./scenario11-2_estimator_no_gps_update.png)
 Without the GPS update, the control feedback for the height is missing and the drift in the estimator takes effect and is visible as a continuous drift in the z coordinate of the trajectory.
 
-## 5.3 - own estimator, realistic IMU
+## Step 5.3: Own estimator and realistic IMU
 Switching to using a realistic (i.e. noisy) IMU, but still not considering GPS measurements in the update step, yields this result:
 ![Scenario 11-3](./scenario11-3_realistic_IMU.png)
-The trajectory is obviously very far off from the targeted one.
+The trajectory is obviously very far off from the targeted one, still missing an effective correction for drift errors.
 
-## 5.4 - tuning process noise model
+## Step 5.4: Tuning process noise model
 Starting from this parameter configuration:
 ```
 QPosXYStd = .05
@@ -217,7 +216,7 @@ Increasing QPosZStd to .25 and QVelZStd to .5 results in a better, but still not
 ![Scenario 11-4](./scenario11-4_tuned_noise_model.png)
 
 
-## 5.5. - implementing GPS Update step
+## Step 5.5: Implementing GPS Update step
 
 Implementing the GPS update step follows section 7.3.1:
 
@@ -240,25 +239,27 @@ Implementing the GPS update step follows section 7.3.1:
 /////////////////////////////// END STUDENT CODE ////////////////////////////
 ```
 
-With this update step in place, the resulting trajectory looks like this:
+With this update step in place, the drone can finally compensate for continuous drift errors and the resulting trajectory looks like this:
 
 
 ![Scenario 11-5](./scenario11-5_implemented_GPS_Update.png)
 
-## Scenario 11.6 - further tuning
-Now that the estimator is completely in place, I tried to further tune the parameters.
-Increasing GPSPosZStd from 3 to 4 and GPSVelZStd from 0.3 to 0.4 resulted in a slight further improvement in position error:
+## Step 5.6: Further tuning
+Now that the estimator is completely in place, I tried to finetune the parameters.
+Increasing GPSPosZStd from 3 to 4 and GPSVelZStd from 0.3 to 0.4 resulted in a very slight further improvement in position error:
 
 ![Scenario 11-6](./scenario11-6_parameterTuning.png)
 
-# Step 6 - Insert your controller
+# Step 6 - Insert your controller (Scenario 11)
 
-Inserting both the controller code and parameter file from the previous project first resulted in an erratic flight - as was already expected.
+## Step 6.1 Inserting my controller and rough de-tuning
+Inserting both the controller code and parameter file from my previous project first resulted in an erratic flight - as was already indicated as very likely in the description.
 
-Performing a first tuning round for the parameters I could achieve a sufficiently close (according to scenario criteria of staying within 1m of TODO) flight along the target trajectory, but with a poor performance at the second corner of the square.
+Performing a first de-tuning round for the parameters I achieved a sufficiently close flight along the target trajectory fulfilling the formal scenario criteria of keeping an estimated position error of < 1m, but with a poor performance at the second corner of the square (hitting ground as a consequence):
 
-These were the roughly re-tuned parameters of my controller:
+![Scenario 11 draft tuning](./step6-draft-tuned.png)
 
+These were the roughly re-tuned parameters of my controller which I took as a baseline for further parameter tuning:
 ```
 # Position control gains
 kpPosXY = 22
@@ -276,14 +277,12 @@ kpYaw = 2
 # Angle rate gains
 kpPQR = 70, 70, 6
 ```
-resulting in the trajectory:
 
-![Scenario 11-7](./scenario11-7_OwnController.png)
+## Step 6.2 Fine-tuning of parameter sets
+To improve the performance, I followed the advice to further tune my setup in a two-step process.
+Setting the IMU noise model values to 0 again I reverted to a perfect IMU sensor, still yielding more or less the same performance, indicating that the performance issues may be primarily related to the controller (as opposed to estimator):
 
-As I was not satisfied with this performance, I followed the advice to further tune my setup in a two-step process.
-Setting the IMU noise model values to 0 again I reverted to a perfect IMU sensor, still yielding more or less the same performance (indicating that the poor performance may be primarily related to the controller (as opposed to estimator):
-
-![Scenario 11 perfect IMU](./scenario11_perfect_IMU.png)
+![Scenario 11 perfect IMU](./step6_perfect_IMU.png)
 
 With a perfect IMU sensor, I fine-tuned the parameters to
 ```
@@ -304,42 +303,65 @@ kpYaw = 2
 kpPQR = 70, 70, 8
 ```
 
-Yielding this performance (still with perfect IMU):)
+Yielding this significantly improved performance (note: still with perfect IMU sensor):
 
-![Scenario 11 tuned controller](./scenario11-tuned-controller.png)
+![Scenario 11 tuned controller](./step6-tuned-controller.png)
 
-Now activating the realistic IMU again and performing some more tuning of the estimator parameters I finally arrive at this performance:
+Now activating the realistic IMU again and performing some more tuning sessions of both controller and estimator parameters I managed to finally arrive at this performance (with realistic IMU sensor):
 
-![Scenario 11 fine-tuned final](./scenario11_fine_tuned_final.png)
+![Scenario 11 fine-tuned final](./step6-final-overview.png)
 
-This is some improvement over the first tuning result, but it still exhibits a significant error in the z coordinate around the second corner. I did not succeed in finding the root cause of this, whether it's a limit in my implementation or a tuning issue, but would appreciate feedback on possible causes.
-
-The following final parameter sets are:
+...using this final parameter set for the controller:
 
 ```
-QuadControlParams.txt
+[QuadControlParams] 
+
+UseIdealEstimator=1
+
+# Physical properties
+Mass = 0.5
+L = 0.17
+Ixx = 0.0023
+Iyy = 0.0023
+Izz = 0.0046
+kappa = 0.016
+minMotorThrust = .1
+maxMotorThrust = 4.5
+
 # Position control gains
 kpPosXY = 22
 kpPosZ = 16
-KiPosZ = 14
-# 14
+KiPosZ = 15
 
 # Velocity control gains
 kpVelXY = 10
-kpVelZ = 8
+kpVelZ = 7
 
 # Angle control gains
 kpBank = 15
-kpYaw = 2
+kpYaw = 2.5
 
 # Angle rate gains
-# kpPQR = 92, 92, 8
-kpPQR = 70, 70, 8
+kpPQR = 68, 68, 8
 
+# limits
+maxAscentRate = 5
+maxDescentRate = 2
+maxSpeedXY = 5
+maxHorizAccel = 12
+maxTiltAngle = .7
+```
 
-QuadEstimatorEKF.txt:
+...and for the estimator:
+
+```
+[QuadEstimatorEKF]
+InitState = 0, 0, -1, 0, 0, 0, 0
+InitStdDevs = .1, .1, .3, .1, .1, .3, .05
+
 # Process noise model
 # note that the process covariance matrix is diag(pow(QStd,2))*dtIMU
+
 QPosXYStd = .05
 QPosZStd = .05
 QVelXYStd = .3
@@ -358,5 +380,13 @@ MagYawStd = .1
 dtIMU = 0.002
 attitudeTau = 100
 ```
+## Step 6.3 Analysis of the final result
 
+The position control regarding x and y position follows closely the square trajectory, as can be illustrated from a top view onto the trajectory:
+![Scenario 11 fine-tuned final](./step6-final-topview.png)
+
+However, the altitude control still exhibits a significant error in the z coordinate around the second corner (especially in the second round), as can be seen in the relevant graphed error curves as well as a close-up look at the trajectory of the second corner:
+![Scenario 11 fine-tuned final](./step6-final-altitude-corner-view.png)
+
+I did not succeed in further improving this and finding the root cause of this, whether it's an issue in my implementation (I double-checked my implementation of the altitude controller) or a parameter tuning issue - any feedback on possible improvements is appreciated. Control for the remaining trajectory appears a lot better, but in the second corner the combination of attitude and altitude control remains challenging for the drone even with a lot of tuning efforts.
 

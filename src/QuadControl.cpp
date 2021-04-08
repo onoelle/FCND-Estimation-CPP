@@ -205,6 +205,7 @@ float QuadControl::AltitudeControl(float posZCmd, float velZCmd, float posZ, flo
   float thrust = 0;
 
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
+    
     // calculate altitude error/error on z-axis
     float z_err = posZCmd - posZ;
     // calculate error in velocity in z direction
